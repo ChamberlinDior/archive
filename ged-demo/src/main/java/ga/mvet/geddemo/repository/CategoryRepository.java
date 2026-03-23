@@ -7,6 +7,14 @@ import java.util.List;
 import java.util.Optional;
 
 public interface CategoryRepository extends JpaRepository<Category, Long> {
-    Optional<Category> findByNameIgnoreCase(String name);
+
+    Optional<Category> findByNameIgnoreCaseAndDepartmentId(String name, Long departmentId);
+
     List<Category> findByActiveTrue();
+
+    List<Category> findByDepartmentIdOrderByNameAsc(Long departmentId);
+
+    List<Category> findByDepartmentIdAndActiveTrueOrderByNameAsc(Long departmentId);
+
+    boolean existsByDepartmentId(Long departmentId);
 }

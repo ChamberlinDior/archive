@@ -12,10 +12,6 @@ public class DocumentRequest {
     @Size(max = 180)
     private String title;
 
-    @NotBlank(message = "La référence est obligatoire")
-    @Size(max = 80)
-    private String referenceCode;
-
     @Size(max = 2000)
     private String description;
 
@@ -47,10 +43,6 @@ public class DocumentRequest {
 
     public String getTitle() {
         return title;
-    }
-
-    public String getReferenceCode() {
-        return referenceCode;
     }
 
     public String getDescription() {
@@ -91,10 +83,6 @@ public class DocumentRequest {
 
     public void setTitle(String title) {
         this.title = title;
-    }
-
-    public void setReferenceCode(String referenceCode) {
-        this.referenceCode = referenceCode;
     }
 
     public void setDescription(String description) {

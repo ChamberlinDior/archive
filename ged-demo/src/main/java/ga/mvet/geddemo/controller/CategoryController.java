@@ -36,6 +36,14 @@ public class CategoryController {
         return categoryService.getById(id);
     }
 
+    @GetMapping("/department/{departmentId}")
+    public List<CategoryResponse> getByDepartment(@PathVariable Long departmentId,
+                                                  @RequestParam(required = false, defaultValue = "false") boolean activeOnly) {
+        return activeOnly
+                ? categoryService.getActiveByDepartment(departmentId)
+                : categoryService.getByDepartment(departmentId);
+    }
+
     @PutMapping("/{id}")
     public CategoryResponse update(@PathVariable Long id, @Valid @RequestBody CategoryRequest request) {
         return categoryService.update(id, request);

@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/documents")
@@ -48,6 +49,11 @@ public class DocumentController {
     @GetMapping("/active")
     public List<DocumentResponse> getActiveDocuments() {
         return documentService.getActiveDocuments();
+    }
+
+    @GetMapping("/next-reference")
+    public Map<String, String> getNextReference() {
+        return Map.of("referenceCode", documentService.getNextReferenceCodePreview());
     }
 
     @GetMapping("/{id}")

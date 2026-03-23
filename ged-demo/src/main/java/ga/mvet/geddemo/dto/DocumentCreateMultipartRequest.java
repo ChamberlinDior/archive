@@ -8,7 +8,6 @@ import java.time.LocalDate;
 public class DocumentCreateMultipartRequest {
 
     private String title;
-    private String referenceCode;
     private String description;
     private String status;
 
@@ -25,10 +24,6 @@ public class DocumentCreateMultipartRequest {
 
     public String getTitle() {
         return title;
-    }
-
-    public String getReferenceCode() {
-        return referenceCode;
     }
 
     public String getDescription() {
@@ -61,10 +56,6 @@ public class DocumentCreateMultipartRequest {
 
     public void setTitle(String title) {
         this.title = title;
-    }
-
-    public void setReferenceCode(String referenceCode) {
-        this.referenceCode = referenceCode;
     }
 
     public void setDescription(String description) {

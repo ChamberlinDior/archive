@@ -20,6 +20,11 @@ import java.util.stream.Collectors;
 @Transactional
 public class DocumentService {
 
+    private static final String STORAGE_TYPE_EXTERNAL_LINK = "EXTERNAL_LINK";
+    private static final String STORAGE_TYPE_LOCAL_DISK = "LOCAL_DISK";
+    private static final String STORAGE_TYPE_MANUAL_PATH = "MANUAL_PATH";
+    private static final String REFERENCE_PREFIX = "GED-";
+
     private final DocumentRepository documentRepository;
     private final CategoryService categoryService;
     private final DepartmentService departmentService;
@@ -36,16 +41,15 @@ public class DocumentService {
     }
 
     public DocumentResponse create(DocumentRequest request) {
-        validateUniqueReference(request.getReferenceCode(), null);
-
         Category category = categoryService.findEntityById(request.getCategoryId());
         Department department = departmentService.findEntityById(request.getDepartmentId());
+        validateCategoryBelongsToDepartment(category, department);
 
         Document document = new Document();
-        document.setTitle(request.getTitle());
-        document.setReferenceCode(request.getReferenceCode());
+        document.setTitle(clean(request.getTitle()));
+        document.setReferenceCode(generateNextReferenceCode());
         document.setDescription(request.getDescription());
-        document.setStatus(request.getStatus());
+        document.setStatus(clean(request.getStatus()));
         document.setDocumentDate(request.getDocumentDate());
         document.setActive(request.getActive() != null ? request.getActive() : true);
         document.setCategory(category);
@@ -54,15 +58,15 @@ public class DocumentService {
         if (Boolean.TRUE.equals(request.getExternalDocument()) || hasText(request.getExternalUrl())) {
             validateExternalUrl(request.getExternalUrl());
             document.setExternalDocument(true);
-            document.setExternalUrl(request.getExternalUrl());
-            document.setStorageType("EXTERNAL_LINK");
-            document.setFilePath(request.getExternalUrl());
+            document.setExternalUrl(request.getExternalUrl().trim());
+            document.setStorageType(STORAGE_TYPE_EXTERNAL_LINK);
+            document.setFilePath(request.getExternalUrl().trim());
         } else if (hasText(request.getFilePath())) {
-            document.setFilePath(request.getFilePath());
-            document.setStorageType("MANUAL_PATH");
+            document.setFilePath(request.getFilePath().trim());
+            document.setStorageType(STORAGE_TYPE_MANUAL_PATH);
             document.setExternalDocument(false);
         } else {
-            document.setStorageType("MANUAL_PATH");
+            document.setStorageType(STORAGE_TYPE_MANUAL_PATH);
             document.setExternalDocument(false);
         }
 
@@ -72,18 +76,18 @@ public class DocumentService {
 
     public DocumentResponse createWithUpload(DocumentCreateMultipartRequest request) {
         validateMultipartCreateRequest(request);
-        validateUniqueReference(request.getReferenceCode(), null);
 
         Category category = categoryService.findEntityById(request.getCategoryId());
         Department department = departmentService.findEntityById(request.getDepartmentId());
+        validateCategoryBelongsToDepartment(category, department);
 
         FileUploadResponseInternal storedFile = fileStorageService.storeFile(request.getFile());
 
         Document document = new Document();
-        document.setTitle(request.getTitle());
-        document.setReferenceCode(request.getReferenceCode());
+        document.setTitle(clean(request.getTitle()));
+        document.setReferenceCode(generateNextReferenceCode());
         document.setDescription(request.getDescription());
-        document.setStatus(request.getStatus());
+        document.setStatus(clean(request.getStatus()));
         document.setDocumentDate(request.getDocumentDate());
         document.setActive(request.getActive() != null ? request.getActive() : true);
         document.setCategory(category);
@@ -94,7 +98,7 @@ public class DocumentService {
         document.setFileSize(storedFile.getFileSize());
         document.setFilePath(storedFile.getAbsolutePath());
         document.setExternalDocument(false);
-        document.setStorageType("LOCAL_DISK");
+        document.setStorageType(STORAGE_TYPE_LOCAL_DISK);
 
         Document saved = documentRepository.save(document);
         return mapToResponse(findEntityByIdWithRelations(saved.getId()));
@@ -116,6 +120,50 @@ public class DocumentService {
     @Transactional(readOnly = true)
     public List<DocumentResponse> getActiveDocuments() {
         return documentRepository.findByActiveTrueWithRelations()
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> getByDepartment(Long departmentId) {
+        departmentService.findEntityById(departmentId);
+
+        return documentRepository.findByDepartmentIdWithRelations(departmentId)
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> getActiveByDepartment(Long departmentId) {
+        departmentService.findEntityById(departmentId);
+
+        return documentRepository.findByDepartmentIdAndActiveTrueWithRelations(departmentId)
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> getByDepartmentAndCategory(Long departmentId, Long categoryId) {
+        Department department = departmentService.findEntityById(departmentId);
+        Category category = categoryService.findEntityById(categoryId);
+        validateCategoryBelongsToDepartment(category, department);
+
+        return documentRepository.findByDepartmentIdAndCategoryIdWithRelations(departmentId, categoryId)
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> getActiveByDepartmentAndCategory(Long departmentId, Long categoryId) {
+        Department department = departmentService.findEntityById(departmentId);
+        Category category = categoryService.findEntityById(categoryId);
+        validateCategoryBelongsToDepartment(category, department);
+
+        return documentRepository.findByDepartmentIdAndCategoryIdAndActiveTrueWithRelations(departmentId, categoryId)
                 .stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
@@ -144,15 +192,14 @@ public class DocumentService {
 
     public DocumentResponse update(Long id, DocumentRequest request) {
         Document document = findEntityById(id);
-        validateUniqueReference(request.getReferenceCode(), id);
 
         Category category = categoryService.findEntityById(request.getCategoryId());
         Department department = departmentService.findEntityById(request.getDepartmentId());
+        validateCategoryBelongsToDepartment(category, department);
 
-        document.setTitle(request.getTitle());
-        document.setReferenceCode(request.getReferenceCode());
+        document.setTitle(clean(request.getTitle()));
         document.setDescription(request.getDescription());
-        document.setStatus(request.getStatus());
+        document.setStatus(clean(request.getStatus()));
         document.setDocumentDate(request.getDocumentDate());
         document.setCategory(category);
         document.setDepartment(department);
@@ -164,27 +211,27 @@ public class DocumentService {
         if (Boolean.TRUE.equals(request.getExternalDocument()) || hasText(request.getExternalUrl())) {
             validateExternalUrl(request.getExternalUrl());
 
-            if ("LOCAL_DISK".equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
+            if (STORAGE_TYPE_LOCAL_DISK.equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
                 fileStorageService.deleteFileIfExists(document.getStoredFileName());
             }
 
             document.setExternalDocument(true);
-            document.setExternalUrl(request.getExternalUrl());
-            document.setFilePath(request.getExternalUrl());
-            document.setStorageType("EXTERNAL_LINK");
+            document.setExternalUrl(request.getExternalUrl().trim());
+            document.setFilePath(request.getExternalUrl().trim());
+            document.setStorageType(STORAGE_TYPE_EXTERNAL_LINK);
             document.setOriginalFileName(null);
             document.setStoredFileName(null);
             document.setMimeType(null);
             document.setFileSize(null);
         } else if (hasText(request.getFilePath())) {
-            if ("LOCAL_DISK".equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
+            if (STORAGE_TYPE_LOCAL_DISK.equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
                 fileStorageService.deleteFileIfExists(document.getStoredFileName());
             }
 
             document.setExternalDocument(false);
             document.setExternalUrl(null);
-            document.setFilePath(request.getFilePath());
-            document.setStorageType("MANUAL_PATH");
+            document.setFilePath(request.getFilePath().trim());
+            document.setStorageType(STORAGE_TYPE_MANUAL_PATH);
             document.setOriginalFileName(null);
             document.setStoredFileName(null);
             document.setMimeType(null);
@@ -199,15 +246,14 @@ public class DocumentService {
         validateMultipartUpdateRequest(request);
 
         Document document = findEntityById(id);
-        validateUniqueReference(request.getReferenceCode(), id);
 
         Category category = categoryService.findEntityById(request.getCategoryId());
         Department department = departmentService.findEntityById(request.getDepartmentId());
+        validateCategoryBelongsToDepartment(category, department);
 
-        document.setTitle(request.getTitle());
-        document.setReferenceCode(request.getReferenceCode());
+        document.setTitle(clean(request.getTitle()));
         document.setDescription(request.getDescription());
-        document.setStatus(request.getStatus());
+        document.setStatus(clean(request.getStatus()));
         document.setDocumentDate(request.getDocumentDate());
         document.setCategory(category);
         document.setDepartment(department);
@@ -218,7 +264,7 @@ public class DocumentService {
 
         MultipartFile multipartFile = request.getFile();
         if (multipartFile != null && !multipartFile.isEmpty()) {
-            if ("LOCAL_DISK".equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
+            if (STORAGE_TYPE_LOCAL_DISK.equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
                 fileStorageService.deleteFileIfExists(document.getStoredFileName());
             }
 
@@ -231,7 +277,7 @@ public class DocumentService {
             document.setFilePath(storedFile.getAbsolutePath());
             document.setExternalDocument(false);
             document.setExternalUrl(null);
-            document.setStorageType("LOCAL_DISK");
+            document.setStorageType(STORAGE_TYPE_LOCAL_DISK);
         }
 
         Document saved = documentRepository.save(document);
@@ -246,7 +292,7 @@ public class DocumentService {
     public void delete(Long id) {
         Document document = findEntityById(id);
 
-        if ("LOCAL_DISK".equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
+        if (STORAGE_TYPE_LOCAL_DISK.equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
             fileStorageService.deleteFileIfExists(document.getStoredFileName());
         }
 
@@ -265,6 +311,11 @@ public class DocumentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Document introuvable avec l'id : " + id));
     }
 
+    @Transactional(readOnly = true)
+    public String getNextReferenceCodePreview() {
+        return generateNextReferenceCode();
+    }
+
     private void validateMultipartCreateRequest(DocumentCreateMultipartRequest request) {
         if (request.getFile() == null || request.getFile().isEmpty()) {
             throw new IllegalArgumentException("Le fichier est obligatoire pour cet endpoint d'upload.");
@@ -281,9 +332,6 @@ public class DocumentService {
         if (!hasText(request.getTitle())) {
             throw new IllegalArgumentException("Le titre est obligatoire.");
         }
-        if (!hasText(request.getReferenceCode())) {
-            throw new IllegalArgumentException("La référence est obligatoire.");
-        }
         if (!hasText(request.getStatus())) {
             throw new IllegalArgumentException("Le statut est obligatoire.");
         }
@@ -298,13 +346,24 @@ public class DocumentService {
         }
     }
 
-    private void validateUniqueReference(String referenceCode, Long currentDocumentId) {
-        documentRepository.findByReferenceCode(referenceCode)
-                .ifPresent(existing -> {
-                    if (currentDocumentId == null || !existing.getId().equals(currentDocumentId)) {
-                        throw new IllegalArgumentException("Une autre référence document existe déjà.");
-                    }
-                });
+    private void validateCategoryBelongsToDepartment(Category category, Department department) {
+        if (category.getDepartment() == null || department == null) {
+            throw new IllegalArgumentException("La relation catégorie/département est invalide.");
+        }
+
+        if (!category.getDepartment().getId().equals(department.getId())) {
+            throw new IllegalArgumentException(
+                    "La catégorie sélectionnée n'appartient pas au département sélectionné."
+            );
+        }
+    }
+
+    private String generateNextReferenceCode() {
+        long nextNumber = documentRepository.findTopByOrderByIdDesc()
+                .map(document -> document.getId() + 1L)
+                .orElse(1L);
+
+        return REFERENCE_PREFIX + String.format("%06d", nextNumber);
     }
 
     private void validateExternalUrl(String externalUrl) {
@@ -313,14 +372,20 @@ public class DocumentService {
         }
 
         try {
-            URI uri = URI.create(externalUrl);
+            URI uri = URI.create(externalUrl.trim());
             String scheme = uri.getScheme();
             if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
                 throw new IllegalArgumentException("L'URL externe doit commencer par http:// ou https://");
             }
+        } catch (IllegalArgumentException ex) {
+            throw ex;
         } catch (Exception ex) {
             throw new IllegalArgumentException("L'URL externe fournie est invalide.");
         }
+    }
+
+    private String clean(String value) {
+        return value == null ? null : value.trim();
     }
 
     private boolean hasText(String value) {
@@ -334,7 +399,7 @@ public class DocumentService {
         if (Boolean.TRUE.equals(document.getExternalDocument()) && hasText(document.getExternalUrl())) {
             openUrl = document.getExternalUrl();
             downloadUrl = document.getExternalUrl();
-        } else if ("LOCAL_DISK".equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
+        } else if (STORAGE_TYPE_LOCAL_DISK.equals(document.getStorageType()) && hasText(document.getStoredFileName())) {
             openUrl = "/api/files/documents/" + document.getId() + "/open";
             downloadUrl = "/api/files/documents/" + document.getId() + "/download";
         } else if (hasText(document.getFilePath())) {
